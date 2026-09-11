@@ -4,6 +4,7 @@
 import { DataEvents } from "@/repositories/events";
 import { SyncQueue } from "@/repositories/sync-queue";
 import type { CookingStep, FoodItem, FoodPhoto, Ingredient } from "@/types";
+import { File } from "expo-file-system";
 import type { SQLiteDatabase } from "expo-sqlite";
 
 // ── Row → Domain mappers ─────────────────────────────────
@@ -28,6 +29,8 @@ const rowToPhoto = (r: any): FoodPhoto => ({
   uri: r.uri,
   caption: r.caption ?? undefined,
   takenAt: r.taken_at,
+  storageId: r.storage_id ?? undefined,
+  syncStatus: r.sync_status ?? "local",
 });
 
 const rowToFoodItem = async (db: SQLiteDatabase, r: any): Promise<FoodItem> => {
@@ -131,14 +134,15 @@ const insertChildren = async (
   for (let i = 0; i < item.photos.length; i++) {
     const p = item.photos[i];
     await db.runAsync(
-      `INSERT INTO photos (id, recipe_id, uri, caption, sort_order, taken_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO photos (id, recipe_id, uri, caption, sort_order, taken_at, storage_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       p.id,
       recipeId,
       p.uri,
       p.caption ?? null,
       i,
       p.takenAt,
+      p.storageId ?? null,
     );
     await SyncQueue.enqueue(db, {
       entityType: "photo",
@@ -146,6 +150,7 @@ const insertChildren = async (
       recipeId,
       operation: "upsert",
       payload: {
+        uri: p.uri,
         caption: p.caption ?? null,
         sortOrder: i,
         takenAt: p.takenAt,
@@ -220,6 +225,15 @@ export const FoodRepo = {
   async update(db: SQLiteDatabase, id: string, item: FoodItem): Promise<void> {
     const now = Date.now();
 
+    // Read old photo rows BEFORE deleting so we can clean up files
+    const oldPhotos = await db.getAllAsync<{
+      id: string;
+      uri: string;
+      storage_id: string | null;
+    }>(`SELECT id, uri, storage_id FROM photos WHERE recipe_id = ?`, id);
+
+    const newPhotoIds = new Set(item.photos.map((p) => p.id));
+
     await db.withTransactionAsync(async () => {
       await db.runAsync(
         `UPDATE recipes SET
@@ -245,6 +259,26 @@ export const FoodRepo = {
       await insertChildren(db, id, item, now);
     });
 
+    // Delete local files for removed photos
+    for (const old of oldPhotos) {
+      if (!newPhotoIds.has(old.id)) {
+        if (old.uri) {
+          try {
+            new File(old.uri).delete();
+          } catch {}
+        }
+        // If the photo had a storageId, enqueue remote delete
+        if (old.storage_id) {
+          await SyncQueue.enqueue(db, {
+            entityType: "photo",
+            entityId: old.id,
+            recipeId: id,
+            operation: "delete",
+          });
+        }
+      }
+    }
+
     await SyncQueue.enqueue(db, {
       entityType: "recipe",
       entityId: id,
@@ -267,6 +301,12 @@ export const FoodRepo = {
   async softDelete(db: SQLiteDatabase, id: string): Promise<void> {
     const now = Date.now();
 
+    // Read photo rows BEFORE deleting so we know which local files to remove
+    const photos = await db.getAllAsync<{
+      uri: string;
+      storage_id: string | null;
+    }>(`SELECT uri, storage_id FROM photos WHERE recipe_id = ?`, id);
+
     await db.withTransactionAsync(async () => {
       await db.runAsync(
         `UPDATE recipes SET deleted_at = ?, updated_at = ? WHERE id = ?`,
@@ -276,6 +316,15 @@ export const FoodRepo = {
       );
       await db.runAsync(`DELETE FROM saved_recipes WHERE recipe_id = ?`, id);
     });
+
+    // Delete local files using the new File API
+    for (const photo of photos) {
+      if (photo.uri) {
+        try {
+          new File(photo.uri).delete();
+        } catch {}
+      }
+    }
 
     await SyncQueue.enqueue(db, {
       entityType: "recipe",

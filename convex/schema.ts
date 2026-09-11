@@ -6,10 +6,8 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
-  // ── Convex Auth tables (users, sessions, accounts, ...) ──
   ...authTables,
 
-  // ── Devices per user ────────────────────────────────────
   devices: defineTable({
     userId: v.id("users"),
     deviceId: v.string(),
@@ -19,7 +17,6 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_device", ["deviceId"]),
 
-  // ── Recipes ─────────────────────────────────────────────
   recipes: defineTable({
     userId: v.id("users"),
     localId: v.string(),
@@ -39,7 +36,6 @@ export default defineSchema({
     .index("by_user_updated", ["userId", "updatedAt"])
     .index("by_user_local", ["userId", "localId"]),
 
-  // ── Ingredients ─────────────────────────────────────────
   ingredients: defineTable({
     userId: v.id("users"),
     recipeLocalId: v.string(),
@@ -57,7 +53,6 @@ export default defineSchema({
     .index("by_user_updated", ["userId", "updatedAt"])
     .index("by_user_local", ["userId", "localId"]),
 
-  // ── Steps ───────────────────────────────────────────────
   steps: defineTable({
     userId: v.id("users"),
     recipeLocalId: v.string(),
@@ -73,7 +68,6 @@ export default defineSchema({
     .index("by_user_updated", ["userId", "updatedAt"])
     .index("by_user_local", ["userId", "localId"]),
 
-  // ── Photos ──────────────────────────────────────────────
   photos: defineTable({
     userId: v.id("users"),
     recipeLocalId: v.string(),
@@ -87,14 +81,14 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_user_updated", ["userId", "updatedAt"])
-    .index("by_user_local", ["userId", "localId"]),
+    .index("by_user_local", ["userId", "localId"])
+    .index("by_recipe", ["userId", "recipeLocalId"]), // ← for cascade delete
 
-  // ── Saved ───────────────────────────────────────────────
   savedRecipes: defineTable({
     userId: v.id("users"),
+    localId: v.string(),
     recipeLocalId: v.string(),
     savedAt: v.number(),
-    localId: v.string(),
     updatedAt: v.number(),
     originDevice: v.string(),
   })

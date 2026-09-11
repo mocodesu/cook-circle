@@ -1,13 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-// hooks/use-image-picker.ts (Expo SDK 54+)
+// hooks/use-image-picker.ts
 // ─────────────────────────────────────────────────────────────
+import type { PickedPhoto } from "@/types";
 import { Directory, File, Paths } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback } from "react";
 import { Alert } from "react-native";
 
-// The new API uses a Directory class to represent the folder.
-// We reference it using Paths.document as the base.
 const PHOTOS_DIR = new Directory(Paths.document, "food-photos");
 
 const ensureDir = () => {
@@ -17,33 +16,29 @@ const ensureDir = () => {
 };
 
 /**
- * Copies a picked asset from its transient cache/asset path into
- * the app's persistent document directory using the new File API.
+ * Copies a picked asset into the app's document directory using the
+ * new synchronous File API. No compression — just a durable copy.
  */
-const persistImage = (uri: string): string => {
+const persistImage = (sourceUri: string): string => {
   ensureDir();
 
-  const ext = uri.split(".").pop()?.split("?")[0] || "jpg";
-  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const sourceFile = new File(sourceUri);
+  if (!sourceFile.exists) {
+    throw new Error(`Source file does not exist: ${sourceUri}`);
+  }
 
-  // Create a File instance for the source and the destination
-  const sourceFile = new File(uri);
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
   const destFile = new File(PHOTOS_DIR, filename);
 
-  // The new API has a synchronous .copy() method (no more await)
   sourceFile.copy(destFile);
 
+  console.log("[image-picker] copied →", destFile.uri);
   return destFile.uri;
 };
 
-export interface PickedImage {
-  id: string;
-  uri: string;
-}
-
 export const useImagePicker = () => {
   const pick = useCallback(
-    async (remaining: number): Promise<PickedImage[]> => {
+    async (remaining: number): Promise<PickedPhoto[]> => {
       if (remaining <= 0) return [];
 
       const { status } =
@@ -60,23 +55,22 @@ export const useImagePicker = () => {
         mediaTypes: ["images"],
         allowsMultipleSelection: true,
         selectionLimit: remaining,
-        quality: 0.85,
+        quality: 1,
         exif: false,
       });
 
       if (result.canceled) return [];
 
-      const persisted: PickedImage[] = [];
+      const persisted: PickedPhoto[] = [];
       for (const asset of result.assets) {
         try {
-          // persistImage is now synchronous
-          const uri = persistImage(asset.uri);
+          const localUri = persistImage(asset.uri);
           persisted.push({
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            uri,
+            uri: localUri,
           });
-        } catch {
-          // skip failed copies silently
+        } catch (err) {
+          console.error("[image-picker] persistImage failed:", err);
         }
       }
       return persisted;
@@ -84,7 +78,7 @@ export const useImagePicker = () => {
     [],
   );
 
-  const takePhoto = useCallback(async (): Promise<PickedImage | null> => {
+  const takePhoto = useCallback(async (): Promise<PickedPhoto | null> => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
       Alert.alert(
@@ -96,19 +90,20 @@ export const useImagePicker = () => {
 
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ["images"],
-      quality: 0.85,
+      quality: 1,
       exif: false,
     });
 
     if (result.canceled || result.assets.length === 0) return null;
 
     try {
-      const uri = persistImage(result.assets[0].uri);
+      const localUri = persistImage(result.assets[0].uri);
       return {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        uri,
+        uri: localUri,
       };
-    } catch {
+    } catch (err) {
+      console.error("[image-picker] persistImage failed:", err);
       return null;
     }
   }, []);

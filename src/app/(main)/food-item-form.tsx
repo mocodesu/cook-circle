@@ -65,8 +65,12 @@ function FoodItemForm({ existing }: FoodItemFormProps) {
   const [prep, setPrep] = useState(String(existing?.prepTimeMinutes ?? 0));
   const [cook, setCook] = useState(String(existing?.cookTimeMinutes ?? 0));
 
-  const [photos, setPhotos] = useState<FoodPhoto[]>(existing?.photos ?? []);
-
+  const [photos, setPhotos] = useState<FoodPhoto[]>(
+    existing?.photos.map((p) => ({
+      ...p,
+      syncStatus: p.storageId ? "synced" : "local",
+    })) ?? [],
+  );
   const [ingredients, setIngredients] = useState(
     existing?.ingredients.map((i) => ({
       id: i.id,
@@ -113,6 +117,7 @@ function FoodItemForm({ existing }: FoodItemFormProps) {
     const remaining = MAX_PHOTOS - photos.length;
     if (remaining <= 0) return;
     const picked = await pick(remaining);
+    console.log("[form] picked photos:", picked);
     if (picked.length > 0) {
       const now = Date.now();
       setPhotos((prev) => [
@@ -121,6 +126,7 @@ function FoodItemForm({ existing }: FoodItemFormProps) {
           id: p.id,
           uri: p.uri,
           takenAt: now + i,
+          syncStatus: "local" as const,
         })),
       ]);
     }
@@ -180,7 +186,14 @@ function FoodItemForm({ existing }: FoodItemFormProps) {
       prepTimeMinutes: parseInt(prep, 10) || 0,
       cookTimeMinutes: parseInt(cook, 10) || 0,
       imageUri: photos[0]?.uri,
-      photos,
+      photos: photos.map((p) => ({
+        id: p.id,
+        uri: p.uri,
+        caption: p.caption,
+        takenAt: p.takenAt,
+        storageId: p.storageId,
+        syncStatus: p.storageId ? "synced" : "pending",
+      })),
       ingredients: ingredients
         .filter((i) => i.name.trim().length > 0)
         .map((i) => ({

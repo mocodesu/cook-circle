@@ -1,14 +1,9 @@
 // ─────────────────────────────────────────────────────────────
 // convex/sync.ts
 // ─────────────────────────────────────────────────────────────
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-
-// ─────────────────────────────────────────────────────────────
-// convex/sync.ts — top of file, replace requireUser
-// ─────────────────────────────────────────────────────────────
-
-import { getAuthUserId } from "@convex-dev/auth/server";
 
 async function requireUser(ctx: any) {
   const userId = await getAuthUserId(ctx);
@@ -16,7 +11,23 @@ async function requireUser(ctx: any) {
   return { _id: userId };
 }
 
-// ─── Register (or refresh) this device ─────────────────────
+function tableForEntity(entity: string) {
+  switch (entity) {
+    case "recipe":
+      return "recipes";
+    case "ingredient":
+      return "ingredients";
+    case "step":
+      return "steps";
+    case "photo":
+      return "photos";
+    case "saved":
+      return "savedRecipes";
+    default:
+      throw new Error(`Unknown entity: ${entity}`);
+  }
+}
+
 export const registerDevice = mutation({
   args: { deviceId: v.string(), name: v.optional(v.string()) },
   handler: async (ctx, { deviceId, name }) => {
@@ -40,7 +51,6 @@ export const registerDevice = mutation({
   },
 });
 
-// ─── Push: batch upsert from local outbox ──────────────────
 export const pushChanges = mutation({
   args: {
     deviceId: v.string(),
@@ -66,23 +76,37 @@ export const pushChanges = mutation({
 
     for (const change of changes) {
       const table = tableForEntity(change.entityType);
-      const keyField = change.entityType === "recipe" ? "localId" : "localId";
-      const keyValue = change.localId;
 
-      // Find existing remote row by (userId, localId)
       const existing = await (ctx.db.query(table as any) as any)
         .withIndex("by_user_local", (q: any) =>
-          q.eq("userId", user._id).eq(keyField, keyValue),
+          q.eq("userId", user._id).eq("localId", change.localId),
         )
         .unique();
 
       if (change.operation === "delete") {
+        // Cascade: if deleting a recipe, remove all its photos from
+        // storage before deleting the photo rows.
+        if (change.entityType === "recipe") {
+          const photos = await ctx.db
+            .query("photos")
+            .withIndex("by_recipe", (q) =>
+              q.eq("userId", user._id).eq("recipeLocalId", change.localId),
+            )
+            .collect();
+          for (const photo of photos) {
+            if (photo.storageId) {
+              try {
+                await ctx.storage.delete(photo.storageId);
+              } catch {}
+            }
+            await ctx.db.delete(photo._id);
+          }
+        }
         if (existing) await ctx.db.delete(existing._id);
         continue;
       }
 
       if (existing) {
-        // Last-write-wins: only apply if remote is older
         if ((existing.updatedAt ?? 0) > change.updatedAt) continue;
         await ctx.db.patch(existing._id, {
           ...change.payload,
@@ -105,7 +129,6 @@ export const pushChanges = mutation({
   },
 });
 
-// ─── Pull: everything changed since `cursor` ───────────────
 export const pullChanges = query({
   args: { cursor: v.number(), deviceId: v.string() },
   handler: async (ctx, { cursor, deviceId }) => {
@@ -125,16 +148,15 @@ export const pullChanges = query({
 
     for (const t of tables) {
       const rows = await ctx.db
-        .query(t)
-        .withIndex("by_user_updated", (q) =>
+        .query(t as any)
+        .withIndex("by_user_updated", (q: any) =>
           q.eq("userId", user._id).gt("updatedAt", cursor),
         )
         .take(LIMIT);
 
-      // Don't echo back rows this device wrote
-      result[t] = rows.filter((r) => r.originDevice !== deviceId);
+      result[t] = rows.filter((r: any) => r.originDevice !== deviceId);
 
-      for (const r of rows) {
+      for (const r of rows as any[]) {
         if (r.updatedAt > maxUpdated) maxUpdated = r.updatedAt;
       }
     }
@@ -147,36 +169,9 @@ export const pullChanges = query({
   },
 });
 
-// ─── Photo upload URL (client uploads binary separately) ───
-export const generatePhotoUploadUrl = mutation({
-  args: {},
-  handler: async (ctx) => {
-    await requireUser(ctx);
-    return await ctx.storage.generateUploadUrl();
-  },
-});
-
 export const getPhotoUrl = query({
   args: { storageId: v.id("_storage") },
   handler: async (ctx, { storageId }) => {
     return await ctx.storage.getUrl(storageId);
   },
 });
-
-// ─── Entity → table name ──────────────────────────────────
-function tableForEntity(entity: string) {
-  switch (entity) {
-    case "recipe":
-      return "recipes";
-    case "ingredient":
-      return "ingredients";
-    case "step":
-      return "steps";
-    case "photo":
-      return "photos";
-    case "saved":
-      return "savedRecipes";
-    default:
-      throw new Error(`Unknown entity: ${entity}`);
-  }
-}
