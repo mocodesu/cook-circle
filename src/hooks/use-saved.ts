@@ -4,8 +4,9 @@
 import { DataEvents } from "@/repositories/events";
 import { SavedRepo } from "@/repositories/saved-repo";
 import type { FoodItem } from "@/types";
+import { useFocusEffect } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 export const useSavedItems = () => {
   const db = useSQLiteContext();
@@ -20,10 +21,12 @@ export const useSavedItems = () => {
     }
   }, [db]);
 
-  useEffect(() => {
-    load();
-    return DataEvents.subscribe(load);
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+      return DataEvents.subscribe(load);
+    }, [load]),
+  );
 
   return { items, isLoading, reload: load };
 };
@@ -36,10 +39,12 @@ export const useIsSaved = (recipeId: string) => {
     setIsSaved(await SavedRepo.isSaved(db, recipeId));
   }, [db, recipeId]);
 
-  useEffect(() => {
-    load();
-    return DataEvents.subscribe(load);
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+      return DataEvents.subscribe(load);
+    }, [load]),
+  );
 
   return isSaved;
 };

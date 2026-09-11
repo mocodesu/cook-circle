@@ -4,8 +4,9 @@
 import { DataEvents } from "@/repositories/events";
 import { FoodRepo } from "@/repositories/food-repo";
 import type { FoodItem } from "@/types";
+import { useFocusEffect } from "expo-router";
 import { useSQLiteContext } from "expo-sqlite";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 export const useFoods = () => {
   const db = useSQLiteContext();
@@ -21,10 +22,14 @@ export const useFoods = () => {
     }
   }, [db]);
 
-  useEffect(() => {
-    load();
-    return DataEvents.subscribe(load);
-  }, [load]);
+  // Re-runs every time the screen gains focus (including after a
+  // modal dismisses) AND subscribes to live updates while focused.
+  useFocusEffect(
+    useCallback(() => {
+      load();
+      return DataEvents.subscribe(load);
+    }, [load]),
+  );
 
   return { items, isLoading, reload: load };
 };
@@ -47,10 +52,12 @@ export const useFood = (id: string | undefined) => {
     }
   }, [db, id]);
 
-  useEffect(() => {
-    load();
-    return DataEvents.subscribe(load);
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+      return DataEvents.subscribe(load);
+    }, [load]),
+  );
 
   return { item, isLoading, reload: load };
 };

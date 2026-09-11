@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────
 // repositories/saved-repo.ts
 // ─────────────────────────────────────────────────────────────
+import { DataEvents } from "@/repositories/events";
 import type { FoodItem } from "@/types";
 import type { SQLiteDatabase } from "expo-sqlite";
-import { DataEvents } from "./events";
 import { FoodRepo } from "./food-repo";
 
 export const SavedRepo = {
