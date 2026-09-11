@@ -11,14 +11,14 @@ import {
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-const EAS_PROJECT_ID = "e043e157-97dd-4185-a931-f550b7dbc68a";
-const PROJECT_SLUG = "template";
+const EAS_PROJECT_ID = "43821512-f6fb-434c-ae0d-0e437e8df9cd";
+const PROJECT_SLUG = "cookcircle";
 const OWNER = "mocodesu";
 
 /**
  * App identity
  */
-const APP_NAME = "Template Starter";
+const APP_NAME = "Cook Circle";
 const BUNDLE_IDENTIFIER = `com.${OWNER}.${PROJECT_SLUG}`;
 const PACKAGE_NAME = `com.${OWNER}.${PROJECT_SLUG}`;
 const SCHEME = PROJECT_SLUG;
@@ -86,7 +86,11 @@ const getAppEnvironment = (): AppEnvironment => {
   const value = process.env.APP_ENV;
 
   if (!value) {
-    return "development";
+    throw new Error(
+      `APP_ENV is not set. Expected one of: ${Object.keys(ENVIRONMENTS).join(
+        ", ",
+      )}`,
+    );
   }
 
   if (!(value in ENVIRONMENTS)) {
@@ -129,7 +133,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
 
     orientation: "portrait",
 
-    description: "A starter application",
+    description:
+      "A Recipe and Ingredient Management App for Cooking Enthusiasts",
 
     /**
      * App icon
@@ -279,6 +284,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       "./plugins/scroll-bar-android",
       "expo-router",
       "expo-font",
+      "expo-image",
     ],
 
     /**
