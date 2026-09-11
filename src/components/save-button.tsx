@@ -1,8 +1,10 @@
 // ─────────────────────────────────────────────────────────────
 // components/save-button.tsx
 // ─────────────────────────────────────────────────────────────
-import { useSavedRecipes } from "@/store/saved-recipes";
+import { useIsSaved } from "@/hooks/use-saved";
+import { SavedRepo } from "@/repositories/saved-repo";
 import { Ionicons } from "@expo/vector-icons";
+import { useSQLiteContext } from "expo-sqlite";
 import React, { FC } from "react";
 import { Pressable } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
@@ -14,16 +16,21 @@ interface SaveButtonProps {
 
 const SaveButton: FC<SaveButtonProps> = ({ recipeId, size = 36 }) => {
   const { theme } = useUnistyles();
+  const db = useSQLiteContext();
 
-  const isSaved = useSavedRecipes((s) => s.savedIds.includes(recipeId));
-  const toggle = useSavedRecipes((s) => s.toggle);
+  const isSaved = useIsSaved(recipeId);
+
+  const handleToggle = async () => {
+    await SavedRepo.toggle(db, recipeId);
+    // SavedRepo.toggle emits DataEvents — no manual emit needed
+  };
 
   return (
     <Pressable
       onPress={(e) => {
         // Guard against the parent Pressable/Link firing navigation
         e.stopPropagation?.();
-        toggle(recipeId);
+        handleToggle();
       }}
       hitSlop={12}
       style={({ pressed }) => [

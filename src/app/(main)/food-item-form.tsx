@@ -3,16 +3,15 @@
 // ─────────────────────────────────────────────────────────────
 import PhotoPickerGrid from "@/components/photo-picker-grid";
 import Text from "@/components/text";
-import {
-  createEmptyFoodItem,
-  type FoodItem,
-  type FoodPhoto,
-} from "@/data/food-items";
+import { useFood } from "@/hooks/use-foods";
 import { useImagePicker } from "@/hooks/use-image-picker";
 import { useUnsavedChangesGuard } from "@/hooks/use-unsaved-changes-guard";
-import { createId, useFoodItems } from "@/store/food-items";
+import { FoodRepo } from "@/repositories/food-repo";
+import type { FoodItem, FoodPhoto } from "@/types";
+import { createId } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useSQLiteContext } from "expo-sqlite";
 import React, { useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, TextInput, View } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
@@ -21,17 +20,42 @@ const MAX_INGREDIENTS = 20;
 const MAX_STEPS = 20;
 const MAX_PHOTOS = 4;
 
+// ─────────────────────────────────────────────────────────────
+// OUTER — route-level component. Resolves the existing item, then
+// mounts the form once with `key` so initial state seeds correctly.
+// ─────────────────────────────────────────────────────────────
 export default function FoodItemFormScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
+  const { item, isLoading } = useFood(id);
+  const isEdit = Boolean(id);
+
+  // Edit mode with a fetch still in flight — render nothing until ready
+  if (isEdit && isLoading) {
+    return (
+      <>
+        <Stack.Screen options={{ title: "Loading…" }} />
+        <View style={{ flex: 1 }} />
+      </>
+    );
+  }
+
+  return <FoodItemForm key={item?.id ?? "new"} existing={item} />;
+}
+
+// ─────────────────────────────────────────────────────────────
+// INNER — the actual form. Guaranteed to have the item (or none
+// for create mode) on first render, so useState seeds correctly.
+// ─────────────────────────────────────────────────────────────
+interface FoodItemFormProps {
+  existing?: FoodItem;
+}
+
+function FoodItemForm({ existing }: FoodItemFormProps) {
   const router = useRouter();
-  const { pick, takePhoto } = useImagePicker();
+  const { pick } = useImagePicker();
   const { theme } = useUnistyles();
+  const db = useSQLiteContext();
 
-  const items = useFoodItems((s) => s.items);
-  const addItem = useFoodItems((s) => s.addItem);
-  const updateItem = useFoodItems((s) => s.updateItem);
-
-  const existing = id ? items.find((x) => x.id === id) : undefined;
   const isEdit = Boolean(existing);
 
   // ── Form state — seeded from existing when editing ─────
@@ -63,7 +87,6 @@ export default function FoodItemFormScreen() {
   );
 
   // ── Dirty state ────────────────────────────────────────
-  // Serialize all editable fields into a single comparable string.
   const snapshot = useMemo(
     () =>
       JSON.stringify({
@@ -79,7 +102,7 @@ export default function FoodItemFormScreen() {
     [title, description, servings, prep, cook, photos, ingredients, steps],
   );
 
-  const initialSnapshotRef = useRef(snapshot); // captured on first render
+  const initialSnapshotRef = useRef(snapshot);
   const isDirty = snapshot !== initialSnapshotRef.current;
 
   const bypassRef = useRef(false);
@@ -142,15 +165,17 @@ export default function FoodItemFormScreen() {
     setSteps((prev) => prev.filter((row) => row.id !== rowId));
 
   // ── Save ────────────────────────────────────────────────
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!title.trim()) {
       Alert.alert("Title required", "Give your recipe a name.");
       return;
     }
 
-    const payload: Partial<FoodItem> = {
+    const item: FoodItem = {
+      id: existing?.id ?? createId(),
       title: title.trim(),
       description: description.trim(),
+      source: existing?.source ?? "created",
       servings: parseInt(servings, 10) || 1,
       prepTimeMinutes: parseInt(prep, 10) || 0,
       cookTimeMinutes: parseInt(cook, 10) || 0,
@@ -175,21 +200,12 @@ export default function FoodItemFormScreen() {
     };
 
     if (isEdit && existing) {
-      updateItem(existing.id, payload);
+      await FoodRepo.update(db, existing.id, item);
     } else {
-      const item: FoodItem = {
-        ...createEmptyFoodItem(),
-        ...payload,
-        id: createId(),
-        source: "created",
-      } as FoodItem;
-      addItem(item);
+      await FoodRepo.insert(db, item);
     }
 
-    // ← new: mark clean and allow navigation
-    initialSnapshotRef.current = snapshot;
     bypassRef.current = true;
-
     router.back();
   };
 
@@ -405,7 +421,7 @@ export default function FoodItemFormScreen() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// SUB-COMPONENTS (same as before, plus the useUnistyles import)
+// SUB-COMPONENTS
 // ─────────────────────────────────────────────────────────────
 
 interface SectionProps {
@@ -513,7 +529,7 @@ const RemoveButton: React.FC<RemoveButtonProps> = ({ onPress }) => {
 };
 
 // ─────────────────────────────────────────────────────────────
-// STYLES (identical to the previous create screen, plus addDisabled)
+// STYLES
 // ─────────────────────────────────────────────────────────────
 const styles = StyleSheet.create((theme) => ({
   screen: { flex: 1, backgroundColor: theme.colors.background },

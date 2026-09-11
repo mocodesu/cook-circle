@@ -4,7 +4,7 @@
 import Fab from "@/components/fab";
 import FoodItemCard from "@/components/food-item-card";
 import KitchenOverview from "@/components/kitchen-overview";
-import { useFoodItems } from "@/store/food-items";
+import { useFoods } from "@/hooks/use-foods";
 import { useRouter } from "expo-router";
 import React from "react";
 import { ScrollView, View } from "react-native";
@@ -14,7 +14,8 @@ import { StyleSheet } from "react-native-unistyles";
 export default function KitchenScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const items = useFoodItems((s) => s.items);
+
+  const { items } = useFoods();
 
   return (
     <View style={styles.root}>
@@ -33,12 +34,8 @@ export default function KitchenScreen() {
         </View>
       </ScrollView>
 
-      {/* FAB — sits above the tab bar */}
       <View
-        style={[
-          styles.fabContainer,
-          { bottom: insets.bottom + 60 }, // 60 ≈ tab bar height
-        ]}
+        style={[styles.fabContainer, { bottom: insets.bottom + 60 }]}
         pointerEvents="box-none"
       >
         <Fab

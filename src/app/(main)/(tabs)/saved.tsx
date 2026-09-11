@@ -4,22 +4,13 @@
 import FoodItemCard from "@/components/food-item-card";
 import SavedOverview from "@/components/saved-overview";
 import Text from "@/components/text";
-import { FOOD_ITEMS, type FoodItem } from "@/data/food-items";
-import { useSavedRecipes } from "@/store/saved-recipes";
-import React, { useMemo } from "react";
+import { useSavedItems } from "@/hooks/use-saved";
+import React from "react";
 import { ScrollView, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
 export default function SavedScreen() {
-  const savedIds = useSavedRecipes((s) => s.savedIds);
-
-  const items = useMemo<FoodItem[]>(
-    () =>
-      savedIds
-        .map((id) => FOOD_ITEMS.find((item) => item.id === id))
-        .filter((item): item is FoodItem => Boolean(item)),
-    [savedIds],
-  );
+  const { items } = useSavedItems();
 
   return (
     <ScrollView

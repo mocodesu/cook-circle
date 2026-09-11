@@ -285,6 +285,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       "expo-router",
       "expo-font",
       "expo-image",
+      "expo-sqlite",
     ],
 
     /**

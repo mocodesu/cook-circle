@@ -3,26 +3,28 @@
 // ─────────────────────────────────────────────────────────────
 import SaveButton from "@/components/save-button";
 import Text from "@/components/text";
-import type { CookingStep, FoodPhoto, Ingredient } from "@/data/food-items";
-import { useFoodItems } from "@/store/food-items";
-import {
-  DEFAULT_LIGHT_COLORS,
-  DEFAULT_PRIMARY_COLOR,
-} from "@/theme/color-schemes";
 import { Ionicons } from "@expo/vector-icons";
-import { router, Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useSQLiteContext } from "expo-sqlite";
 import React, { useCallback } from "react";
 import { Alert, Image, Pressable, ScrollView, View } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { StyleSheet, useUnistyles } from "react-native-unistyles";
+
+import { useFood } from "@/hooks/use-foods";
+import { FoodRepo } from "@/repositories/food-repo";
+import type { CookingStep, FoodPhoto, Ingredient } from "@/types";
 
 export default function FoodDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const item = useFoodItems((s) => s.items.find((x) => x.id === id));
+  const router = useRouter();
+  const db = useSQLiteContext();
+  const { theme } = useUnistyles();
 
-  const removeItem = useFoodItems((s) => s.removeItem);
+  const { item, isLoading } = useFood(id);
 
   const handleDelete = useCallback(() => {
     if (!item) return;
+
     Alert.alert(
       "Delete recipe?",
       `"${item.title}" will be permanently removed. This can't be undone.`,
@@ -31,15 +33,26 @@ export default function FoodDetailsScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => {
-            removeItem(item.id);
+          onPress: async () => {
+            await FoodRepo.softDelete(db, item.id);
             router.back();
           },
         },
       ],
     );
-  }, [item, removeItem, router]);
+  }, [item, db, router]);
 
+  // ── Loading ─────────────────────────────────────────────
+  if (isLoading) {
+    return (
+      <>
+        <Stack.Screen options={{ title: "Loading…" }} />
+        <View style={styles.emptyContainer} />
+      </>
+    );
+  }
+
+  // ── Not found ───────────────────────────────────────────
   if (!item) {
     return (
       <>
@@ -82,7 +95,7 @@ export default function FoodDetailsScreen() {
                 <Ionicons
                   name="pencil"
                   size={20}
-                  color={DEFAULT_PRIMARY_COLOR}
+                  color={theme.colors.primary}
                 />
               </Pressable>
               <Pressable
@@ -98,7 +111,7 @@ export default function FoodDetailsScreen() {
                 <Ionicons
                   name="trash-outline"
                   size={20}
-                  color={DEFAULT_LIGHT_COLORS.danger}
+                  color={theme.colors.danger}
                 />
               </Pressable>
             </View>
@@ -179,8 +192,9 @@ export default function FoodDetailsScreen() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// SECTION WRAPPER
+// SUB-COMPONENTS
 // ─────────────────────────────────────────────────────────────
+
 interface SectionProps {
   title: string;
   children: React.ReactNode;
@@ -194,9 +208,6 @@ const Section: React.FC<SectionProps> = ({ title, children }) => (
   </View>
 );
 
-// ─────────────────────────────────────────────────────────────
-// META PILL
-// ─────────────────────────────────────────────────────────────
 const MetaPill: React.FC<{ label: string; value: string }> = ({
   label,
   value,
@@ -211,18 +222,10 @@ const MetaPill: React.FC<{ label: string; value: string }> = ({
   </View>
 );
 
-// ─────────────────────────────────────────────────────────────
-// INGREDIENTS TABLE
-// 3 columns: QTY (right) | UNIT (left) | INGREDIENT (flex)
-// Header row uses panel background + micro uppercase labels.
-// Body rows separated by hairline borders.
-// ─────────────────────────────────────────────────────────────
-interface IngredientsTableProps {
-  ingredients: Ingredient[];
-}
-const IngredientsTable: React.FC<IngredientsTableProps> = ({ ingredients }) => (
+const IngredientsTable: React.FC<{ ingredients: Ingredient[] }> = ({
+  ingredients,
+}) => (
   <View style={styles.table}>
-    {/* Header */}
     <View style={[styles.tableRow, styles.tableHeader]}>
       <Text
         variant="micro"
@@ -250,8 +253,6 @@ const IngredientsTable: React.FC<IngredientsTableProps> = ({ ingredients }) => (
         Ingredient
       </Text>
     </View>
-
-    {/* Rows */}
     {ingredients.map((ing, i) => {
       const isLast = i === ingredients.length - 1;
       return (
@@ -267,11 +268,9 @@ const IngredientsTable: React.FC<IngredientsTableProps> = ({ ingredients }) => (
           >
             {ing.quantity ?? "—"}
           </Text>
-
           <Text variant="body" color="mutedText" style={styles.colUnit}>
             {ing.unit ?? "—"}
           </Text>
-
           <View style={styles.colName}>
             <Text variant="body" color="onSurface">
               {ing.name}
@@ -293,22 +292,12 @@ const IngredientsTable: React.FC<IngredientsTableProps> = ({ ingredients }) => (
   </View>
 );
 
-// ─────────────────────────────────────────────────────────────
-// RECIPE THREAD
-// Reddit-style: left rail holds the number badge, a vertical
-// line stretches down through the row to reach the next badge.
-// Instruction sits in a bordered card on the right.
-// ─────────────────────────────────────────────────────────────
-interface RecipeThreadProps {
-  steps: CookingStep[];
-}
-const RecipeThread: React.FC<RecipeThreadProps> = ({ steps }) => (
+const RecipeThread: React.FC<{ steps: CookingStep[] }> = ({ steps }) => (
   <View style={styles.thread}>
     {steps.map((step, i) => {
       const isLast = i === steps.length - 1;
       return (
         <View key={step.id} style={styles.threadRow}>
-          {/* Rail: badge + connector line */}
           <View style={styles.threadRail}>
             <View style={styles.stepNumber}>
               <Text variant="subheadBold" color="onPrimary">
@@ -317,13 +306,10 @@ const RecipeThread: React.FC<RecipeThreadProps> = ({ steps }) => (
             </View>
             {!isLast && <View style={styles.threadLine} />}
           </View>
-
-          {/* Instruction card */}
           <View style={styles.stepCard}>
             <Text variant="body" color="onSurface">
               {step.instruction}
             </Text>
-
             {(step.durationMinutes !== undefined ||
               step.targetTempC !== undefined) && (
               <View style={styles.stepMeta}>
@@ -350,13 +336,7 @@ const RecipeThread: React.FC<RecipeThreadProps> = ({ steps }) => (
   </View>
 );
 
-// ─────────────────────────────────────────────────────────────
-// PHOTO GRID (unchanged)
-// ─────────────────────────────────────────────────────────────
-interface PhotoGridProps {
-  photos: FoodPhoto[];
-}
-const PhotoGrid: React.FC<PhotoGridProps> = ({ photos }) => (
+const PhotoGrid: React.FC<{ photos: FoodPhoto[] }> = ({ photos }) => (
   <View style={styles.grid}>
     {photos.map((photo) => (
       <Pressable
@@ -395,6 +375,14 @@ const styles = StyleSheet.create((theme) => ({
   screen: { flex: 1, backgroundColor: theme.colors.background },
   content: { paddingBottom: theme.spacing.giant },
 
+  emptyContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: theme.spacing.sm,
+    backgroundColor: theme.colors.background,
+  },
+
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
@@ -406,27 +394,14 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     justifyContent: "center",
   },
-  headerButtonPressed: {
-    opacity: theme.opacity.pressed,
-  },
-
-  emptyContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: theme.spacing.sm,
-    backgroundColor: theme.colors.background,
-  },
+  headerButtonPressed: { opacity: theme.opacity.pressed },
 
   hero: {
     width: "100%",
     aspectRatio: 4 / 3,
     backgroundColor: theme.colors.panel,
   },
-  heroPlaceholder: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  heroPlaceholder: { alignItems: "center", justifyContent: "center" },
 
   body: {
     paddingHorizontal: theme.layout.screenPaddingH,
@@ -436,10 +411,7 @@ const styles = StyleSheet.create((theme) => ({
 
   headerBlock: { gap: theme.spacing.xs },
 
-  metaRow: {
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-  },
+  metaRow: { flexDirection: "row", gap: theme.spacing.sm },
   metaPill: {
     flex: 1,
     alignItems: "center",
@@ -455,7 +427,7 @@ const styles = StyleSheet.create((theme) => ({
   section: { gap: theme.spacing.md },
   sectionBody: { gap: theme.spacing.md },
 
-  // ── INGREDIENTS TABLE ───────────────────────────────────
+  // Ingredients table
   table: {
     borderRadius: theme.radii.md,
     backgroundColor: theme.colors.surface,
@@ -478,29 +450,14 @@ const styles = StyleSheet.create((theme) => ({
     borderBottomWidth: theme.borderWidth.hairline,
     borderBottomColor: theme.colors.panelBorder,
   },
-  colQty: {
-    width: 44,
-  },
-  colUnit: {
-    width: 52,
-  },
-  colName: {
-    flex: 1,
-    gap: theme.spacing.xxs,
-  },
+  colQty: { width: 44 },
+  colUnit: { width: 52 },
+  colName: { flex: 1, gap: theme.spacing.xxs },
 
-  // ── RECIPE THREAD ───────────────────────────────────────
-  thread: {
-    // intentionally no gap — rows must touch so the connector line is continuous
-  },
-  threadRow: {
-    flexDirection: "row",
-    alignItems: "stretch",
-  },
-  threadRail: {
-    width: RAIL_WIDTH,
-    alignItems: "center",
-  },
+  // Recipe thread
+  thread: {},
+  threadRow: { flexDirection: "row", alignItems: "stretch" },
+  threadRail: { width: RAIL_WIDTH, alignItems: "center" },
   threadLine: {
     width: CONNECTOR_WIDTH,
     flex: 1,
@@ -526,11 +483,7 @@ const styles = StyleSheet.create((theme) => ({
     borderColor: theme.colors.panelBorder,
     gap: theme.spacing.sm,
   },
-  stepMeta: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: theme.spacing.sm,
-  },
+  stepMeta: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
   stepMetaChip: {
     paddingHorizontal: theme.spacing.sm,
     paddingVertical: theme.spacing.xxs,
@@ -540,12 +493,8 @@ const styles = StyleSheet.create((theme) => ({
     borderColor: theme.colors.panelBorder,
   },
 
-  // ── PHOTO GRID ──────────────────────────────────────────
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: theme.spacing.sm,
-  },
+  // Photo grid
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
   gridItem: {
     width: "48.5%",
     borderRadius: theme.radii.md,

@@ -3,7 +3,8 @@
 // ─────────────────────────────────────────────────────────────
 import SaveButton from "@/components/save-button";
 import Text from "@/components/text";
-import type { FoodItem } from "@/data/food-items";
+import { FoodItem } from "@/types";
+
 import { Link } from "expo-router";
 import React, { FC } from "react";
 import { Image, Pressable, View } from "react-native";
