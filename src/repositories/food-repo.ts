@@ -1,6 +1,8 @@
 // ─────────────────────────────────────────────────────────────
 // repositories/food-repo.ts
 // ─────────────────────────────────────────────────────────────
+import { DataEvents } from "@/repositories/events";
+import { SyncQueue } from "@/repositories/sync-queue";
 import type { CookingStep, FoodItem, FoodPhoto, Ingredient } from "@/types";
 import type { SQLiteDatabase } from "expo-sqlite";
 
@@ -28,87 +30,149 @@ const rowToPhoto = (r: any): FoodPhoto => ({
   takenAt: r.taken_at,
 });
 
-// ── Public API ──────────────────────────────────────────
+const rowToFoodItem = async (db: SQLiteDatabase, r: any): Promise<FoodItem> => {
+  const [ingredients, steps, photos] = await Promise.all([
+    db.getAllAsync<any>(
+      `SELECT * FROM ingredients WHERE recipe_id = ? ORDER BY sort_order`,
+      r.id,
+    ),
+    db.getAllAsync<any>(
+      `SELECT * FROM steps WHERE recipe_id = ? ORDER BY step_number`,
+      r.id,
+    ),
+    db.getAllAsync<any>(
+      `SELECT * FROM photos WHERE recipe_id = ? ORDER BY sort_order`,
+      r.id,
+    ),
+  ]);
+
+  return {
+    id: r.id,
+    title: r.title,
+    description: r.description,
+    imageUri: r.image_uri ?? undefined,
+    source: r.source,
+    servings: r.servings,
+    prepTimeMinutes: r.prep_time_minutes,
+    cookTimeMinutes: r.cook_time_minutes,
+    ingredients: ingredients.map(rowToIngredient),
+    steps: steps.map(rowToStep),
+    photos: photos.map(rowToPhoto),
+  };
+};
+
+// ── Children insert (also enqueued for sync) ──────────────
+const insertChildren = async (
+  db: SQLiteDatabase,
+  recipeId: string,
+  item: FoodItem,
+  now: number,
+) => {
+  for (let i = 0; i < item.ingredients.length; i++) {
+    const ing = item.ingredients[i];
+    await db.runAsync(
+      `INSERT INTO ingredients
+         (id, recipe_id, quantity, unit, name, preparation, is_optional, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ing.id,
+      recipeId,
+      ing.quantity ?? null,
+      ing.unit ?? null,
+      ing.name,
+      ing.preparation ?? null,
+      ing.isOptional ? 1 : 0,
+      i,
+    );
+    await SyncQueue.enqueue(db, {
+      entityType: "ingredient",
+      entityId: ing.id,
+      recipeId,
+      operation: "upsert",
+      payload: {
+        quantity: ing.quantity ?? null,
+        unit: ing.unit ?? null,
+        name: ing.name,
+        preparation: ing.preparation ?? null,
+        isOptional: ing.isOptional ?? false,
+        sortOrder: i,
+        updatedAt: now,
+      },
+    });
+  }
+
+  for (let i = 0; i < item.steps.length; i++) {
+    const s = item.steps[i];
+    await db.runAsync(
+      `INSERT INTO steps
+         (id, recipe_id, step_number, instruction, duration_minutes, target_temp_c)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      s.id,
+      recipeId,
+      i + 1,
+      s.instruction,
+      s.durationMinutes ?? null,
+      s.targetTempC ?? null,
+    );
+    await SyncQueue.enqueue(db, {
+      entityType: "step",
+      entityId: s.id,
+      recipeId,
+      operation: "upsert",
+      payload: {
+        stepNumber: i + 1,
+        instruction: s.instruction,
+        durationMinutes: s.durationMinutes ?? null,
+        targetTempC: s.targetTempC ?? null,
+        updatedAt: now,
+      },
+    });
+  }
+
+  for (let i = 0; i < item.photos.length; i++) {
+    const p = item.photos[i];
+    await db.runAsync(
+      `INSERT INTO photos (id, recipe_id, uri, caption, sort_order, taken_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      p.id,
+      recipeId,
+      p.uri,
+      p.caption ?? null,
+      i,
+      p.takenAt,
+    );
+    await SyncQueue.enqueue(db, {
+      entityType: "photo",
+      entityId: p.id,
+      recipeId,
+      operation: "upsert",
+      payload: {
+        caption: p.caption ?? null,
+        sortOrder: i,
+        takenAt: p.takenAt,
+        updatedAt: now,
+      },
+    });
+  }
+};
+
+// ── Public API ────────────────────────────────────────────
 export const FoodRepo = {
-  /** Full list — excludes soft-deleted. Newest first. */
   async getAll(db: SQLiteDatabase): Promise<FoodItem[]> {
     const recipes = await db.getAllAsync<any>(
       `SELECT * FROM recipes WHERE deleted_at IS NULL ORDER BY created_at DESC`,
     );
-
-    const items: FoodItem[] = [];
-    for (const r of recipes) {
-      const [ingredients, steps, photos] = await Promise.all([
-        db.getAllAsync<any>(
-          `SELECT * FROM ingredients WHERE recipe_id = ? ORDER BY sort_order`,
-          r.id,
-        ),
-        db.getAllAsync<any>(
-          `SELECT * FROM steps WHERE recipe_id = ? ORDER BY step_number`,
-          r.id,
-        ),
-        db.getAllAsync<any>(
-          `SELECT * FROM photos WHERE recipe_id = ? ORDER BY sort_order`,
-          r.id,
-        ),
-      ]);
-
-      items.push({
-        id: r.id,
-        title: r.title,
-        description: r.description,
-        imageUri: r.image_uri ?? undefined,
-        source: r.source,
-        servings: r.servings,
-        prepTimeMinutes: r.prep_time_minutes,
-        cookTimeMinutes: r.cook_time_minutes,
-        ingredients: ingredients.map(rowToIngredient),
-        steps: steps.map(rowToStep),
-        photos: photos.map(rowToPhoto),
-      });
-    }
-    return items;
+    return Promise.all(recipes.map((r) => rowToFoodItem(db, r)));
   },
 
-  /** Single recipe — returns undefined if soft-deleted or missing. */
   async getById(db: SQLiteDatabase, id: string): Promise<FoodItem | undefined> {
     const r = await db.getFirstAsync<any>(
       `SELECT * FROM recipes WHERE id = ? AND deleted_at IS NULL`,
       id,
     );
     if (!r) return undefined;
-
-    const [ingredients, steps, photos] = await Promise.all([
-      db.getAllAsync<any>(
-        `SELECT * FROM ingredients WHERE recipe_id = ? ORDER BY sort_order`,
-        id,
-      ),
-      db.getAllAsync<any>(
-        `SELECT * FROM steps WHERE recipe_id = ? ORDER BY step_number`,
-        id,
-      ),
-      db.getAllAsync<any>(
-        `SELECT * FROM photos WHERE recipe_id = ? ORDER BY sort_order`,
-        id,
-      ),
-    ]);
-
-    return {
-      id: r.id,
-      title: r.title,
-      description: r.description,
-      imageUri: r.image_uri ?? undefined,
-      source: r.source,
-      servings: r.servings,
-      prepTimeMinutes: r.prep_time_minutes,
-      cookTimeMinutes: r.cook_time_minutes,
-      ingredients: ingredients.map(rowToIngredient),
-      steps: steps.map(rowToStep),
-      photos: photos.map(rowToPhoto),
-    };
+    return rowToFoodItem(db, r);
   },
 
-  /** Insert a full recipe + all children in one transaction. */
   async insert(db: SQLiteDatabase, item: FoodItem): Promise<void> {
     const now = Date.now();
 
@@ -130,56 +194,29 @@ export const FoodRepo = {
         now,
         now,
       );
-
-      for (let i = 0; i < item.ingredients.length; i++) {
-        const ing = item.ingredients[i];
-        await db.runAsync(
-          `INSERT INTO ingredients
-             (id, recipe_id, quantity, unit, name, preparation, is_optional, sort_order)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          ing.id,
-          item.id,
-          ing.quantity ?? null,
-          ing.unit ?? null,
-          ing.name,
-          ing.preparation ?? null,
-          ing.isOptional ? 1 : 0,
-          i,
-        );
-      }
-
-      for (let i = 0; i < item.steps.length; i++) {
-        const s = item.steps[i];
-        await db.runAsync(
-          `INSERT INTO steps
-             (id, recipe_id, step_number, instruction, duration_minutes, target_temp_c)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          s.id,
-          item.id,
-          i + 1,
-          s.instruction,
-          s.durationMinutes ?? null,
-          s.targetTempC ?? null,
-        );
-      }
-
-      for (let i = 0; i < item.photos.length; i++) {
-        const p = item.photos[i];
-        await db.runAsync(
-          `INSERT INTO photos (id, recipe_id, uri, caption, sort_order, taken_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          p.id,
-          item.id,
-          p.uri,
-          p.caption ?? null,
-          i,
-          p.takenAt,
-        );
-      }
+      await insertChildren(db, item.id, item, now);
     });
+
+    await SyncQueue.enqueue(db, {
+      entityType: "recipe",
+      entityId: item.id,
+      operation: "upsert",
+      payload: {
+        title: item.title,
+        description: item.description,
+        imageUri: item.imageUri ?? null,
+        source: item.source,
+        servings: item.servings,
+        prepTimeMinutes: item.prepTimeMinutes,
+        cookTimeMinutes: item.cookTimeMinutes,
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+
+    DataEvents.emit();
   },
 
-  /** Replace all children + update the parent. Used for edits. */
   async update(db: SQLiteDatabase, id: string, item: FoodItem): Promise<void> {
     const now = Date.now();
 
@@ -201,67 +238,51 @@ export const FoodRepo = {
         id,
       );
 
-      // Delete + re-insert children (simplest correct approach for edits)
       await db.runAsync(`DELETE FROM ingredients WHERE recipe_id = ?`, id);
       await db.runAsync(`DELETE FROM steps WHERE recipe_id = ?`, id);
       await db.runAsync(`DELETE FROM photos WHERE recipe_id = ?`, id);
 
-      for (let i = 0; i < item.ingredients.length; i++) {
-        const ing = item.ingredients[i];
-        await db.runAsync(
-          `INSERT INTO ingredients
-             (id, recipe_id, quantity, unit, name, preparation, is_optional, sort_order)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          ing.id,
-          id,
-          ing.quantity ?? null,
-          ing.unit ?? null,
-          ing.name,
-          ing.preparation ?? null,
-          ing.isOptional ? 1 : 0,
-          i,
-        );
-      }
-      for (let i = 0; i < item.steps.length; i++) {
-        const s = item.steps[i];
-        await db.runAsync(
-          `INSERT INTO steps
-             (id, recipe_id, step_number, instruction, duration_minutes, target_temp_c)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          s.id,
-          id,
-          i + 1,
-          s.instruction,
-          s.durationMinutes ?? null,
-          s.targetTempC ?? null,
-        );
-      }
-      for (let i = 0; i < item.photos.length; i++) {
-        const p = item.photos[i];
-        await db.runAsync(
-          `INSERT INTO photos (id, recipe_id, uri, caption, sort_order, taken_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          p.id,
-          id,
-          p.uri,
-          p.caption ?? null,
-          i,
-          p.takenAt,
-        );
-      }
+      await insertChildren(db, id, item, now);
     });
+
+    await SyncQueue.enqueue(db, {
+      entityType: "recipe",
+      entityId: id,
+      operation: "upsert",
+      payload: {
+        title: item.title,
+        description: item.description,
+        imageUri: item.imageUri ?? null,
+        source: item.source,
+        servings: item.servings,
+        prepTimeMinutes: item.prepTimeMinutes,
+        cookTimeMinutes: item.cookTimeMinutes,
+        updatedAt: now,
+      },
+    });
+
+    DataEvents.emit();
   },
 
-  /** Soft delete — keeps the row for future sync propagation. */
   async softDelete(db: SQLiteDatabase, id: string): Promise<void> {
-    await db.runAsync(
-      `UPDATE recipes SET deleted_at = ?, updated_at = ? WHERE id = ?`,
-      Date.now(),
-      Date.now(),
-      id,
-    );
-    // ON DELETE CASCADE on saved_recipes means the saved row is removed
-    // automatically when we hard-delete. For soft-delete we must clean it here.
-    await db.runAsync(`DELETE FROM saved_recipes WHERE recipe_id = ?`, id);
+    const now = Date.now();
+
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        `UPDATE recipes SET deleted_at = ?, updated_at = ? WHERE id = ?`,
+        now,
+        now,
+        id,
+      );
+      await db.runAsync(`DELETE FROM saved_recipes WHERE recipe_id = ?`, id);
+    });
+
+    await SyncQueue.enqueue(db, {
+      entityType: "recipe",
+      entityId: id,
+      operation: "delete",
+    });
+
+    DataEvents.emit();
   },
 };

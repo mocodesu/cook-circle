@@ -2,9 +2,10 @@
 // repositories/saved-repo.ts
 // ─────────────────────────────────────────────────────────────
 import { DataEvents } from "@/repositories/events";
+import { FoodRepo } from "@/repositories/food-repo";
+import { SyncQueue } from "@/repositories/sync-queue";
 import type { FoodItem } from "@/types";
 import type { SQLiteDatabase } from "expo-sqlite";
-import { FoodRepo } from "./food-repo";
 
 export const SavedRepo = {
   async getAllIds(db: SQLiteDatabase): Promise<string[]> {
@@ -29,11 +30,21 @@ export const SavedRepo = {
   },
 
   async save(db: SQLiteDatabase, recipeId: string): Promise<void> {
+    const now = Date.now();
     await db.runAsync(
       `INSERT OR REPLACE INTO saved_recipes (recipe_id, saved_at) VALUES (?, ?)`,
       recipeId,
-      Date.now(),
+      now,
     );
+
+    await SyncQueue.enqueue(db, {
+      entityType: "saved",
+      entityId: recipeId,
+      recipeId,
+      operation: "upsert",
+      payload: { savedAt: now, updatedAt: now },
+    });
+
     DataEvents.emit();
   },
 
@@ -42,6 +53,14 @@ export const SavedRepo = {
       `DELETE FROM saved_recipes WHERE recipe_id = ?`,
       recipeId,
     );
+
+    await SyncQueue.enqueue(db, {
+      entityType: "saved",
+      entityId: recipeId,
+      recipeId,
+      operation: "delete",
+    });
+
     DataEvents.emit();
   },
 
