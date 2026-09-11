@@ -53,8 +53,12 @@ const EmptyState: React.FC = () => (
   </View>
 );
 
-const styles = StyleSheet.create((theme) => ({
-  screen: { flex: 1, backgroundColor: theme.colors.background },
+const styles = StyleSheet.create((theme, rt) => ({
+  screen: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    paddingTop: rt.insets.top,
+  },
   content: { paddingBottom: theme.spacing.xxl },
   list: {
     paddingHorizontal: theme.layout.screenPaddingH,

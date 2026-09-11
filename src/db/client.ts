@@ -111,6 +111,12 @@ export async function initializeDatabase(db: SQLite.SQLiteDatabase) {
       registered_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS preferences (
+  key        TEXT PRIMARY KEY NOT NULL,
+  value      TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
     -- ── Indexes ────────────────────────────────────────────
     CREATE INDEX IF NOT EXISTS idx_ingredients_recipe ON ingredients(recipe_id);
     CREATE INDEX IF NOT EXISTS idx_steps_recipe       ON steps(recipe_id);

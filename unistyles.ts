@@ -56,10 +56,12 @@ export const applyAppColorScheme = (
   UnistylesRuntime.updateTheme("light", (theme) => ({
     ...theme,
     colors: lightColors,
+    isDark: false,
   }));
   UnistylesRuntime.updateTheme("dark", (theme) => ({
     ...theme,
     colors: darkColors,
+    isDark: true,
   }));
 
   UnistylesRuntime.setRootViewBackgroundColor(
@@ -365,8 +367,12 @@ const commonTokens = {
   layout: LAYOUT,
 } as const;
 
-const lightTheme = { colors: Colors, ...commonTokens } as const;
-const darkTheme = { colors: DarkColors, ...commonTokens } as const;
+const lightTheme = { isDark: false, colors: Colors, ...commonTokens } as const;
+const darkTheme = {
+  isDark: true,
+  colors: DarkColors,
+  ...commonTokens,
+} as const;
 
 const appThemes = {
   light: lightTheme,

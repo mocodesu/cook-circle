@@ -2,8 +2,10 @@
 // app/_layout.tsx
 // ─────────────────────────────────────────────────────────────
 import SyncProvider from "@/components/sync-provider";
+import ThemedSystemBars from "@/components/themed-system-bars";
 import { initializeDatabase } from "@/db/client";
 import { useRetentionReminders } from "@/hooks/use-retention-reminders";
+import { ThemePreferenceProvider } from "@/hooks/use-theme-preference";
 import { handleExpoUpdateMetadata } from "@/utils/expo-update-metadata";
 import { initializeUpdateChannel } from "@/utils/retention-reminder";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
@@ -15,7 +17,6 @@ import { Stack, useNavigationContainerRef } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { SQLiteProvider } from "expo-sqlite";
 import { useEffect } from "react";
-import { SystemBars } from "react-native-edge-to-edge";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { sentryConfig } from "../../sentry.config";
@@ -69,34 +70,39 @@ const RootLayout = () => {
           databaseName="cook-circle.db"
           onInit={initializeDatabase}
         >
-          <SyncProvider>
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="(main)/(tabs)" />
-              <Stack.Screen
-                name="(main)/food-details"
-                options={{
-                  headerShown: true,
-                  headerBackTitle: "Kitchen",
-                  headerTintColor: theme.colors.primary,
-                  headerStyle: { backgroundColor: theme.colors.background },
-                  headerTitleStyle: { color: theme.colors.onBackground },
+          <ThemePreferenceProvider>
+            <SyncProvider>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
                 }}
-              />
-              <Stack.Screen
-                name="(main)/food-item-form"
-                options={{
-                  headerShown: true,
-                  presentation: "modal",
-                  headerBackTitle: "Cancel",
-                  headerTintColor: theme.colors.primary,
-                  headerStyle: { backgroundColor: theme.colors.background },
-                  headerTitleStyle: { color: theme.colors.onBackground },
-                }}
-              />
-            </Stack>
-          </SyncProvider>
-
-          <SystemBars style="auto" />
+              >
+                <Stack.Screen name="(main)/(tabs)" />
+                <Stack.Screen
+                  name="(main)/food-details"
+                  options={{
+                    headerShown: true,
+                    headerBackTitle: "Kitchen",
+                    headerTintColor: theme.colors.primary,
+                    headerStyle: { backgroundColor: theme.colors.background },
+                    headerTitleStyle: { color: theme.colors.onBackground },
+                  }}
+                />
+                <Stack.Screen
+                  name="(main)/food-item-form"
+                  options={{
+                    headerShown: true,
+                    presentation: "modal",
+                    headerBackTitle: "Cancel",
+                    headerTintColor: theme.colors.primary,
+                    headerStyle: { backgroundColor: theme.colors.background },
+                    headerTitleStyle: { color: theme.colors.onBackground },
+                  }}
+                />
+              </Stack>
+              <ThemedSystemBars />
+            </SyncProvider>
+          </ThemePreferenceProvider>
         </SQLiteProvider>
       </ConvexAuthProvider>
     </GestureHandlerRootView>

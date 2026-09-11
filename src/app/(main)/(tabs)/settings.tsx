@@ -3,17 +3,24 @@
 // ─────────────────────────────────────────────────────────────
 import Text from "@/components/text";
 import { useSync } from "@/hooks/use-sync";
+import {
+  useThemePreference,
+  type ThemeMode,
+} from "@/hooks/use-theme-preference";
 import { SyncEngine } from "@/repositories/sync-engine";
 import {
-  registerBackgroundSync,
-  unregisterBackgroundSync,
-} from "@/tasks/background-sync";
+  APP_COLOR_SCHEMES,
+  type AppColorSchemeId,
+} from "@/theme/color-schemes";
 import { useAuthActions } from "@convex-dev/auth/react";
+import { Ionicons } from "@expo/vector-icons";
 import { useConvex, useConvexAuth } from "convex/react";
+import * as Application from "expo-application";
 import { useSQLiteContext } from "expo-sqlite";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -39,6 +46,8 @@ export default function SettingsScreen() {
     refresh,
   } = useSync();
 
+  const { schemeId, mode, selectScheme, selectMode } = useThemePreference();
+
   const convex = useConvex();
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
   const { signIn, signOut } = useAuthActions();
@@ -46,7 +55,6 @@ export default function SettingsScreen() {
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  // ── Modal state ────────────────────────────────────────
   const [showSignIn, setShowSignIn] = useState(false);
   const [step, setStep] = useState<SignInStep>("email");
   const [email, setEmail] = useState("");
@@ -55,7 +63,11 @@ export default function SettingsScreen() {
   const [verifying, setVerifying] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // ── Run sync (requires auth) ───────────────────────────
+  // ── Version info ────────────────────────────────────────
+  const appVersion = Application.nativeApplicationVersion ?? "—";
+  const buildVersion = Application.nativeBuildVersion ?? "—";
+
+  // ── Sync driver ─────────────────────────────────────────
   const runSync = useCallback(async () => {
     if (!isAuthenticated) return;
     setSyncing(true);
@@ -71,7 +83,14 @@ export default function SettingsScreen() {
     }
   }, [db, convex, isAuthenticated, refresh]);
 
-  // ── Reset modal ────────────────────────────────────────
+  useEffect(() => {
+    if (!enabled || !isAuthenticated) return;
+    runSync();
+    const interval = setInterval(runSync, 60_000);
+    return () => clearInterval(interval);
+  }, [enabled, isAuthenticated, runSync]);
+
+  // ── Sign-in modal helpers ──────────────────────────────
   const resetModal = () => {
     setShowSignIn(false);
     setStep("email");
@@ -80,28 +99,13 @@ export default function SettingsScreen() {
     setAuthError(null);
   };
 
-  // ── Toggle ─────────────────────────────────────────────
   const handleToggle = async (next: boolean) => {
     await setEnabled(next);
-
-    // Register/unregister the OS background task
-    try {
-      if (next) {
-        await registerBackgroundSync();
-      } else {
-        await unregisterBackgroundSync();
-      }
-    } catch (err) {
-      console.warn("[settings] background task toggle failed:", err);
-    }
-
-    // Prompt sign-in if enabling without an account
     if (next && !isAuthenticated) {
       setShowSignIn(true);
     }
   };
 
-  // ── Step 1: send code ──────────────────────────────────
   const handleSendCode = async () => {
     if (!email.trim()) return;
     setSending(true);
@@ -116,7 +120,6 @@ export default function SettingsScreen() {
     }
   };
 
-  // ── Step 2: verify code ────────────────────────────────
   const handleVerify = async () => {
     if (!code.trim()) return;
     setVerifying(true);
@@ -124,7 +127,6 @@ export default function SettingsScreen() {
     try {
       await signIn("email", { email: email.trim(), code: code.trim() });
       resetModal();
-      // Give Convex Auth a beat to propagate, then run an initial sync
       setTimeout(() => runSync(), 500);
     } catch (err: any) {
       setAuthError(err?.message ?? "That code didn't work. Try again.");
@@ -133,7 +135,6 @@ export default function SettingsScreen() {
     }
   };
 
-  // ── Sign out ───────────────────────────────────────────
   const handleSignOut = async () => {
     Alert.alert("Sign out?", "Local recipes stay on this device.", [
       { text: "Cancel", style: "cancel" },
@@ -148,7 +149,7 @@ export default function SettingsScreen() {
     ]);
   };
 
-  // ── Status label ───────────────────────────────────────
+  // ── Status label ────────────────────────────────────────
   const statusLabel = (() => {
     if (!enabled) return "Your recipes stay on this device only.";
     if (authLoading) return "Checking account…";
@@ -165,7 +166,109 @@ export default function SettingsScreen() {
         Settings
       </Text>
 
-      {/* ── Back up & sync ───────────────────────────────── */}
+      {/* ── APPEARANCE ───────────────────────────────────── */}
+      <View style={styles.card}>
+        <Text variant="title" color="onSurface">
+          Appearance
+        </Text>
+
+        {/* Color scheme picker */}
+        <View style={styles.schemeBlock}>
+          <Text variant="micro" color="mutedText" textTransform="uppercase">
+            Color scheme
+          </Text>
+
+          <View style={styles.swatchRow}>
+            {APP_COLOR_SCHEMES.map((scheme) => {
+              const active = scheme.id === schemeId;
+              const light = scheme.tokens.light;
+              const dark = scheme.tokens.dark;
+
+              return (
+                <Pressable
+                  key={scheme.id}
+                  onPress={() => selectScheme(scheme.id as AppColorSchemeId)}
+                  style={({ pressed }) => [
+                    styles.swatchWrapper,
+                    active && styles.swatchWrapperActive,
+                    pressed && styles.pressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={scheme.label}
+                  accessibilityState={{ selected: active }}
+                >
+                  <View style={styles.swatchInner}>
+                    <View
+                      style={[
+                        styles.swatchHalf,
+                        { backgroundColor: light.primary },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.swatchHalf,
+                        { backgroundColor: dark.primary },
+                      ]}
+                    />
+                  </View>
+                  {active && (
+                    <View style={styles.swatchCheck}>
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={18}
+                        color={theme.colors.primary}
+                      />
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text variant="caption" color="mutedText">
+            {APP_COLOR_SCHEMES.find((s) => s.id === schemeId)?.label ?? ""}
+          </Text>
+        </View>
+
+        {/* Theme mode picker */}
+        <View style={styles.schemeBlock}>
+          <Text variant="micro" color="mutedText" textTransform="uppercase">
+            Theme mode
+          </Text>
+
+          <View style={styles.segmented}>
+            {(["system", "light", "dark"] as ThemeMode[]).map((m) => {
+              const active = mode === m;
+              return (
+                <Pressable
+                  key={m}
+                  onPress={() => selectMode(m)}
+                  style={({ pressed }) => [
+                    styles.segment,
+                    active && styles.segmentActive,
+                    pressed && !active && styles.segmentPressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                >
+                  <Text
+                    variant="subheadBold"
+                    color={active ? "onPrimary" : "onSurface"}
+                  >
+                    {m === "system"
+                      ? "System"
+                      : m === "light"
+                        ? "Light"
+                        : "Dark"}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </View>
+
+      {/* ── BACKUP & SYNC ────────────────────────────────── */}
       <View style={styles.card}>
         <View style={styles.row}>
           <View style={styles.rowText}>
@@ -201,7 +304,7 @@ export default function SettingsScreen() {
         )}
       </View>
 
-      {/* ── Account ──────────────────────────────────────── */}
+      {/* ── ACCOUNT ──────────────────────────────────────── */}
       {enabled && !authLoading && (
         <View style={styles.card}>
           <View style={styles.row}>
@@ -236,7 +339,7 @@ export default function SettingsScreen() {
         </View>
       )}
 
-      {/* ── Manual sync ──────────────────────────────────── */}
+      {/* ── SYNC NOW ─────────────────────────────────────── */}
       {enabled && isAuthenticated && (
         <Pressable
           onPress={runSync}
@@ -253,7 +356,71 @@ export default function SettingsScreen() {
         </Pressable>
       )}
 
-      {/* ── Sign-in modal ────────────────────────────────── */}
+      {/* ── ABOUT ────────────────────────────────────────── */}
+      <View style={styles.card}>
+        <Text variant="title" color="onSurface">
+          About
+        </Text>
+
+        <View style={styles.aboutRow}>
+          <Text variant="subhead" color="mutedText">
+            Version
+          </Text>
+          <Text variant="subheadBold" color="onSurface">
+            {appVersion}
+          </Text>
+        </View>
+
+        <View style={styles.aboutRow}>
+          <Text variant="subhead" color="mutedText">
+            Build
+          </Text>
+          <Text variant="subheadBold" color="onSurface">
+            {buildVersion}
+          </Text>
+        </View>
+
+        <View style={styles.aboutRow}>
+          <Text variant="subhead" color="mutedText">
+            Made by
+          </Text>
+          <Text variant="subheadBold" color="onSurface">
+            Cook Circle
+          </Text>
+        </View>
+
+        <Pressable
+          onPress={() => Linking.openURL("https://example.com/privacy")}
+          hitSlop={8}
+          style={({ pressed }) => [styles.aboutLink, pressed && styles.pressed]}
+        >
+          <Text variant="subhead" color="primary">
+            Privacy policy
+          </Text>
+          <Ionicons
+            name="chevron-forward"
+            size={16}
+            color={theme.colors.primary}
+          />
+        </Pressable>
+
+        <Pressable
+          onPress={() => Linking.openURL("https://example.com/terms")}
+          hitSlop={8}
+          style={({ pressed }) => [styles.aboutLink, pressed && styles.pressed]}
+        >
+          <Text variant="subhead" color="primary">
+            Terms of service
+          </Text>
+          <Ionicons
+            name="chevron-forward"
+            size={16}
+            color={theme.colors.primary}
+          />
+        </Pressable>
+      </View>
+
+      {/* ── SIGN-IN MODAL ────────────────────────────────── */}
       <Modal
         visible={showSignIn}
         animationType="slide"
@@ -398,21 +565,27 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create((theme) => ({
-  screen: { flex: 1, backgroundColor: theme.colors.background },
+const styles = StyleSheet.create((theme, rt) => ({
+  screen: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    paddingTop: rt.insets.top,
+  },
   content: {
     paddingHorizontal: theme.layout.screenPaddingH,
     paddingTop: theme.spacing.lg,
     paddingBottom: theme.spacing.giant,
     gap: theme.spacing.lg,
   },
+
+  // ── Cards ─────────────────────────────────────────────
   card: {
     padding: theme.spacing.md,
     borderRadius: theme.radii.md,
     backgroundColor: theme.colors.surface,
     borderWidth: theme.borderWidth.thin,
     borderColor: theme.colors.panelBorder,
-    gap: theme.spacing.sm,
+    gap: theme.spacing.md,
   },
   row: {
     flexDirection: "row",
@@ -420,11 +593,16 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "space-between",
     gap: theme.spacing.md,
   },
-  rowText: { flex: 1, gap: theme.spacing.xxs },
+  rowText: {
+    flex: 1,
+    gap: theme.spacing.xxs,
+  },
   textButton: {
     paddingHorizontal: theme.spacing.sm,
     paddingVertical: theme.spacing.xxs,
   },
+
+  // ── Buttons ───────────────────────────────────────────
   button: {
     backgroundColor: theme.colors.primary,
     paddingVertical: theme.spacing.md,
@@ -436,8 +614,81 @@ const styles = StyleSheet.create((theme) => ({
   pressed: { opacity: theme.opacity.pressed },
   disabled: { opacity: theme.opacity.disabled },
 
+  // ── Appearance ────────────────────────────────────────
+  schemeBlock: {
+    gap: theme.spacing.xs,
+  },
+  swatchRow: {
+    flexDirection: "row",
+    gap: theme.spacing.sm,
+  },
+  swatchWrapper: {
+    flex: 1,
+    height: 56,
+    borderRadius: theme.radii.md,
+    borderWidth: 2,
+    borderColor: "transparent",
+    overflow: "hidden",
+    position: "relative",
+  },
+  swatchWrapperActive: {
+    borderColor: theme.colors.primary,
+  },
+  swatchInner: {
+    flex: 1,
+    flexDirection: "row",
+  },
+  swatchHalf: {
+    flex: 1,
+  },
+  swatchCheck: {
+    position: "absolute",
+    top: -8,
+    right: -8,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radii.full,
+  },
+
+  segmented: {
+    flexDirection: "row",
+    backgroundColor: theme.colors.panel,
+    borderRadius: theme.radii.sm,
+    padding: theme.spacing.xxs,
+    borderWidth: theme.borderWidth.hairline,
+    borderColor: theme.colors.panelBorder,
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: theme.spacing.sm,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.radii.xs,
+  },
+  segmentActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  segmentPressed: {
+    backgroundColor: theme.colors.panelBorder,
+  },
+
+  // ── About ─────────────────────────────────────────────
+  aboutRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  aboutLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: theme.spacing.xs,
+  },
+
   // ── Modal ─────────────────────────────────────────────
-  modalRoot: { flex: 1, backgroundColor: theme.colors.background },
+  modalRoot: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "flex-end",
@@ -445,13 +696,17 @@ const styles = StyleSheet.create((theme) => ({
     paddingTop: theme.spacing.lg,
     paddingBottom: theme.spacing.sm,
   },
-  modalClose: { padding: theme.spacing.xs },
+  modalClose: {
+    padding: theme.spacing.xs,
+  },
   modalBody: {
     paddingHorizontal: theme.layout.screenPaddingH,
     paddingTop: theme.spacing.md,
     gap: theme.spacing.lg,
   },
-  field: { gap: theme.spacing.xxs },
+  field: {
+    gap: theme.spacing.xxs,
+  },
   input: {
     backgroundColor: theme.colors.surface,
     borderWidth: theme.borderWidth.thin,

@@ -47,8 +47,12 @@ export default function KitchenScreen() {
   );
 }
 
-const styles = StyleSheet.create((theme) => ({
-  root: { flex: 1, backgroundColor: theme.colors.background },
+const styles = StyleSheet.create((theme, rt) => ({
+  root: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    paddingTop: rt.insets.top,
+  },
   screen: { flex: 1 },
   content: { paddingBottom: theme.spacing.giant },
   list: {
