@@ -30,11 +30,6 @@ const TabLayout = () => {
         <NativeTabs.Trigger.Icon sf="cooktop.fill" md="kitchen" />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="explore">
-        <NativeTabs.Trigger.Label>Pantry</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf="cabinet.fill" md="inventory_2" />
-      </NativeTabs.Trigger>
-
       <NativeTabs.Trigger name="saved">
         <NativeTabs.Trigger.Label>Saved</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="bookmark.fill" md="bookmark" />
