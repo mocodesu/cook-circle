@@ -389,7 +389,7 @@ declare module "react-native-unistyles" {
 
 StyleSheet.configure({
   settings: {
-    initialTheme: "dark",
+    adaptiveThemes: true,
     nativeBreakpointsMode: "pixels",
     CSSVars: true,
   },

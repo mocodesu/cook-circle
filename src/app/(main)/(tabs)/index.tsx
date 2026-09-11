@@ -1,25 +1,38 @@
-import Text from "@/components/text";
-import { APP_NAME } from "@/constants";
-import { View } from "react-native";
+// ─────────────────────────────────────────────────────────────
+// app/(tabs)/index.tsx  →  Kitchen
+// ─────────────────────────────────────────────────────────────
+import FoodItemCard from "@/components/food-item-card";
+import KitchenOverview from "@/components/kitchen-overview";
+import { FOOD_ITEMS } from "@/data/food-items";
+import React from "react";
+import { ScrollView, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
-export default function Index() {
+export default function KitchenScreen() {
   return (
-    <View style={styles.container}>
-      <Text color="activeSurface" semibold variant="title" textAlign="center">
-        Hello "{APP_NAME}" project! This is the main entry point of the app. You
-        can edit this file to start building your app.
-      </Text>
-    </View>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.content}
+      stickyHeaderIndices={[0]}
+      showsVerticalScrollIndicator={false}
+    >
+      <KitchenOverview count={FOOD_ITEMS.length} />
+
+      <View style={styles.list}>
+        {FOOD_ITEMS.map((item) => (
+          <FoodItemCard key={item.id} item={item} />
+        ))}
+      </View>
+    </ScrollView>
   );
 }
 
-const styles = StyleSheet.create((theme, rt) => ({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: theme.colors.background,
-    paddingHorizontal: theme.paddingHorizontal,
+const styles = StyleSheet.create((theme) => ({
+  screen: { flex: 1, backgroundColor: theme.colors.background },
+  content: { paddingBottom: theme.spacing.xxl },
+  list: {
+    paddingHorizontal: theme.layout.screenPaddingH,
+    paddingTop: theme.spacing.lg,
+    gap: theme.spacing.md,
   },
 }));
