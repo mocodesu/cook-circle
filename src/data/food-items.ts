@@ -322,3 +322,21 @@ export const getSavedFoodItems = (): FoodItem[] =>
   SAVED_FOOD_IDS.map((id) => FOOD_ITEMS.find((item) => item.id === id)).filter(
     (item): item is FoodItem => Boolean(item),
   );
+
+// ─────────────────────────────────────────────────────────────
+// data/food-items.ts — add at the bottom
+// ─────────────────────────────────────────────────────────────
+
+export const createEmptyFoodItem = (): FoodItem => ({
+  id: "",
+  title: "",
+  description: "",
+  imageUri: undefined,
+  source: "created",
+  servings: 2,
+  prepTimeMinutes: 0,
+  cookTimeMinutes: 0,
+  ingredients: [],
+  steps: [],
+  photos: [],
+});

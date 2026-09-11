@@ -1,17 +1,44 @@
 // ─────────────────────────────────────────────────────────────
 // app/(main)/food-details.tsx
 // ─────────────────────────────────────────────────────────────
+import SaveButton from "@/components/save-button";
 import Text from "@/components/text";
 import type { CookingStep, FoodPhoto, Ingredient } from "@/data/food-items";
-import { getFoodItemById } from "@/data/food-items";
-import { Stack, useLocalSearchParams } from "expo-router";
-import React from "react";
-import { Image, Pressable, ScrollView, View } from "react-native";
+import { useFoodItems } from "@/store/food-items";
+import {
+  DEFAULT_LIGHT_COLORS,
+  DEFAULT_PRIMARY_COLOR,
+} from "@/theme/color-schemes";
+import { Ionicons } from "@expo/vector-icons";
+import { router, Stack, useLocalSearchParams } from "expo-router";
+import React, { useCallback } from "react";
+import { Alert, Image, Pressable, ScrollView, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
 export default function FoodDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const item = getFoodItemById(id);
+  const item = useFoodItems((s) => s.items.find((x) => x.id === id));
+
+  const removeItem = useFoodItems((s) => s.removeItem);
+
+  const handleDelete = useCallback(() => {
+    if (!item) return;
+    Alert.alert(
+      "Delete recipe?",
+      `"${item.title}" will be permanently removed. This can't be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            removeItem(item.id);
+            router.back();
+          },
+        },
+      ],
+    );
+  }, [item, removeItem, router]);
 
   if (!item) {
     return (
@@ -31,7 +58,53 @@ export default function FoodDetailsScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: item.title }} />
+      <Stack.Screen
+        options={{
+          title: item.title,
+          headerRight: () => (
+            <View style={styles.headerActions}>
+              <SaveButton recipeId={item.id} size={32} />
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: "/(main)/food-item-form",
+                    params: { id: item.id },
+                  })
+                }
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Edit recipe"
+                style={({ pressed }) => [
+                  styles.headerButton,
+                  pressed && styles.headerButtonPressed,
+                ]}
+              >
+                <Ionicons
+                  name="pencil"
+                  size={20}
+                  color={DEFAULT_PRIMARY_COLOR}
+                />
+              </Pressable>
+              <Pressable
+                onPress={handleDelete}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Delete recipe"
+                style={({ pressed }) => [
+                  styles.headerButton,
+                  pressed && styles.headerButtonPressed,
+                ]}
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={20}
+                  color={DEFAULT_LIGHT_COLORS.danger}
+                />
+              </Pressable>
+            </View>
+          ),
+        }}
+      />
 
       <ScrollView
         style={styles.screen}
@@ -321,6 +394,21 @@ const CONNECTOR_WIDTH = 2;
 const styles = StyleSheet.create((theme) => ({
   screen: { flex: 1, backgroundColor: theme.colors.background },
   content: { paddingBottom: theme.spacing.giant },
+
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  headerButton: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerButtonPressed: {
+    opacity: theme.opacity.pressed,
+  },
 
   emptyContainer: {
     flex: 1,

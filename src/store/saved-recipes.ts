@@ -3,14 +3,9 @@
 // ─────────────────────────────────────────────────────────────
 import { create } from "zustand";
 
-/**
- * Static seed — replace with a SQLite read on boot.
- * Later: hydrate from `saved_recipes` table, and write on every toggle.
- */
 const INITIAL_SAVED_IDS: string[] = ["1", "3"];
 
 interface SavedRecipesState {
-  /** Array (not Set) — Zustand reactivity works best with new references. */
   savedIds: string[];
   toggle: (id: string) => void;
   isSaved: (id: string) => boolean;

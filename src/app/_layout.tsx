@@ -59,6 +59,17 @@ const RootLayout = () => {
             headerTitleStyle: { color: theme.colors.onBackground },
           }}
         />
+        <Stack.Screen
+          name="(main)/food-item-form"
+          options={{
+            headerShown: true,
+            presentation: "modal", // ← iOS-native modal feel for creation flows
+            headerBackTitle: "Cancel",
+            headerTintColor: theme.colors.primary,
+            headerStyle: { backgroundColor: theme.colors.background },
+            headerTitleStyle: { color: theme.colors.onBackground },
+          }}
+        />
       </Stack>
       <SystemBars style="auto" />
     </GestureHandlerRootView>
