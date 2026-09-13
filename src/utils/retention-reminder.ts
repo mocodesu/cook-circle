@@ -511,8 +511,8 @@ export const trackUserActivity = async () => {
   }
 };
 
-export const initializeUpdateChannel = () => {
-  Notifications.setNotificationChannelAsync(UPDATE_CHANNEL_ID, {
+export const initializeUpdateChannel = async () => {
+  await Notifications.setNotificationChannelAsync(UPDATE_CHANNEL_ID, {
     name: "updates",
     description: "Notifications for app updates and important announcements",
     importance: Notifications.AndroidImportance.HIGH,

@@ -6,6 +6,7 @@ import ThemedSystemBars from "@/components/themed-system-bars";
 import { initializeDatabase } from "@/db/client";
 import { useRetentionReminders } from "@/hooks/use-retention-reminders";
 import { ThemePreferenceProvider } from "@/hooks/use-theme-preference";
+import { registerBackgroundSync } from "@/tasks/background-sync";
 import { handleExpoUpdateMetadata } from "@/utils/expo-update-metadata";
 import { initializeUpdateChannel } from "@/utils/retention-reminder";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
@@ -52,12 +53,18 @@ export const unstable_settings = {
 
 const RootLayout = () => {
   useRetentionReminders();
-  initializeUpdateChannel();
 
   const { theme } = useUnistyles();
   const navigationRef = useNavigationContainerRef();
 
   useEffect(() => {
+    initializeUpdateChannel().catch((error) => {
+      console.error("Failed to set up the update notification channel:", error);
+    });
+    registerBackgroundSync().catch((error) => {
+      console.error("Failed to register background sync:", error);
+    });
+
     if (navigationRef?.current) {
       navigationIntegration.registerNavigationContainer(navigationRef);
     }

@@ -382,10 +382,10 @@ export default function SettingsScreen() {
 
         <View style={styles.aboutRow}>
           <Text variant="subhead" color="mutedText">
-            Made by
+            Made with ❤️ by
           </Text>
           <Text variant="subheadBold" color="onSurface">
-            Cook Circle
+            Mocodesu
           </Text>
         </View>
 
